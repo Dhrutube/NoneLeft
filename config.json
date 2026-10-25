@@ -1,0 +1,8 @@
+{
+  "port": 8000,
+  "family_email": "dhruvsehgal13@icloud.com",
+  "ring_timeout_seconds": 25,
+  "retry_gap_seconds": 30,
+  "max_attempts": 3,
+  "stagger_seconds": 2.0
+}

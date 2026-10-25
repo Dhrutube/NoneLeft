@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NoneLeft — Zone Census</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0b0e14; color: #e8ecf3; font-family: -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: baseline; gap: 14px; padding: 22px 28px 10px; }
+  h1 { font-size: 26px; letter-spacing: 4px; }
+  .tag { color: #f5a623; font-size: 13px; }
+  .live { margin-left: auto; color: #e5484d; font-size: 13px; font-weight: 600; animation: pulse 1.4s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 10px 28px 18px; }
+  .stat { background: #141925; border: 1px solid #232b3d; border-radius: 12px; padding: 16px 18px; }
+  .stat .num { font-size: 34px; font-weight: 700; }
+  .stat .lbl { color: #8b95a8; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+  .good .num { color: #46d68c; } .bad .num { color: #ff5c5c; } .warm .num { color: #f5a623; }
+  .controls { padding: 0 28px 14px; display: flex; gap: 12px; }
+  button { font-size: 15px; font-weight: 600; padding: 10px 22px; border-radius: 10px; border: none; cursor: pointer; }
+  #trigger { background: #e5484d; color: #fff; }
+  #reset { background: #232b3d; color: #aab4c6; }
+  main { display: grid; grid-template-columns: 1.6fr 1fr; gap: 18px; padding: 0 28px 30px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; color: #8b95a8; margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; background: #10141d; border: 1px solid #232b3d; border-radius: 12px; overflow: hidden; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #8b95a8; padding: 10px 12px; background: #141925; }
+  td { padding: 9px 12px; border-top: 1px solid #1b2230; font-size: 14px; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: .5px; }
+  .st-PENDING, .st-RINGING { background: #26304a; color: #aab4c6; }
+  .st-OUT { background: #123f2b; color: #46d68c; }
+  .st-NEEDS_RIDE { background: #4a3a12; color: #f5a623; }
+  .st-NEEDS_MEDICAL { background: #4a1212; color: #ff5c5c; }
+  .st-NEEDS_HELP { background: #3a1230; color: #e07be0; }
+  .st-WELFARE_CHECK { background: #ff5c5c; color: #0b0e14; }
+  .prio { color: #8b95a8; font-variant-numeric: tabular-nums; }
+  #logbox { background: #10141d; border: 1px solid #232b3d; border-radius: 12px; padding: 12px 14px; height: 520px; overflow-y: auto; font-size: 13px; }
+  .logline { padding: 5px 0; border-bottom: 1px solid #1b2230; }
+  .logline .t { color: #5b6577; margin-right: 8px; font-variant-numeric: tabular-nums; }
+  .flash { color: #f5a623; font-weight: 700; }
+</style>
+</head>
+<body>
+<header>
+  <h1>NoneLeft</h1>
+  <span class="tag">zone census — every person accounted for</span>
+  <span class="live">● LIVE</span>
+</header>
+
+<div class="stats">
+  <div class="stat"><div class="num" id="s-total">12</div><div class="lbl">residents in zone</div></div>
+  <div class="stat good"><div class="num" id="s-out">0</div><div class="lbl">confirmed out</div></div>
+  <div class="stat bad"><div class="num" id="s-inside">0</div><div class="lbl">still need help</div></div>
+  <div class="stat warm"><div class="num" id="s-acc">0/12</div><div class="lbl">accounted for</div></div>
+</div>
+
+<div class="controls">
+  <button id="trigger">▶ TRIGGER EVACUATION ORDER</button>
+  <button id="reset">reset demo</button>
+</div>
+
+<main>
+  <section>
+    <h2>Dispatch priority list — who's still in the zone</h2>
+    <table>
+      <thead><tr><th>Resident</th><th>Vulnerability</th><th>Status</th><th>Attempts</th><th>Priority</th><th>Real call</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </section>
+  <section>
+    <h2>Live call log</h2>
+    <div id="logbox"></div>
+  </section>
+</main>
+
+<script>
+const STATUS_ORDER = ["WELFARE_CHECK","NEEDS_MEDICAL","NEEDS_HELP","NEEDS_RIDE","PENDING","OUT"];
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+async function post(p){ return (await fetch(p,{method:"POST"})).json(); }
+document.getElementById("trigger").onclick = () => post("/api/trigger");
+document.getElementById("reset").onclick = () => post("/api/reset");
+async function realCall(id){ await fetch("/api/call-real",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rid:id})}); }
+
+async function tick(){
+  try {
+    const s = await (await fetch("/api/state")).json();
+    document.getElementById("s-total").textContent = s.summary.total;
+    document.getElementById("s-out").textContent = s.summary.out;
+    document.getElementById("s-inside").textContent = s.summary.still_inside_or_unknown;
+    document.getElementById("s-acc").textContent = s.summary.accounted + "/" + s.summary.total;
+    const tb = document.getElementById("tbody");
+    tb.innerHTML = s.residents.map(r => `
+      <tr>
+        <td><b>${esc(r.name)}</b><div style="color:#5b6577;font-size:12px">age ${r.age}</div></td>
+        <td style="color:#8b95a8;font-size:12px">${r.vuln.length ? esc(r.vuln.join(", ")) : "—"}</td>
+        <td><span class="badge st-${r.status}">${r.status.replace(/_/g," ")}</span></td>
+        <td class="prio">${r.attempts || 0}</td>
+        <td class="prio">${r.priority}</td>
+        <td>${s.twilio_ready && s.phones.includes(r.id) ? `<button onclick="realCall('${r.id}')" style="background:#2f6bb5;color:#fff;border:none;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer">&#128241; call</button>` : ""}</td>
+      </tr>`).join("");
+    document.getElementById("logbox").innerHTML = s.log.map(l =>
+      `<div class="logline"><span class="t">${l.t}</span>${esc(l.msg)}</div>`).join("");
+  } catch(e){}
+}
+setInterval(tick, 1200); tick();
+</script>
+</body>
+</html>

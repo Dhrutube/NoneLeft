@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resident Phone — NoneLeft Simulator</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0b0e14; color: #e8ecf3; font-family: -apple-system, "SF Pro Text", Roboto, sans-serif;
+         display: flex; justify-content: center; padding: 24px 12px; }
+  .phone { width: 100%; max-width: 380px; background: #000; border-radius: 38px; border: 3px solid #2a3348;
+           padding: 14px; height: 740px; display: flex; flex-direction: column; }
+  .notch { width: 130px; height: 26px; background: #000; border-radius: 14px; margin: 0 auto 8px; position: relative; z-index: 2; }
+  .screen { flex: 1; background: #0f131c; border-radius: 26px; overflow: hidden; display: flex; flex-direction: column; }
+  .status { text-align: center; color: #8b95a8; font-size: 12px; padding: 4px 0 10px; }
+  .calls { flex: 1; overflow-y: auto; padding: 12px; }
+  h3 { color: #8b95a8; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .ring { background: #141b2e; border: 1px solid #2f6bb5; border-radius: 14px; padding: 14px; margin-bottom: 10px;
+          animation: ringpulse 1.2s infinite; }
+  @keyframes ringpulse { 50% { border-color: #4f8fe5; } }
+  .ring .who { font-size: 17px; font-weight: 700; }
+  .ring .sub { color: #8b95a8; font-size: 12px; margin: 3px 0 10px; }
+  .btns { display: flex; gap: 8px; }
+  .btns button { flex: 1; padding: 10px; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: 14px; }
+  .answer { background: #46d68c; color: #08281a; }
+  .ignore { background: #26304a; color: #aab4c6; }
+  .chat { display: flex; flex-direction: column; gap: 8px; }
+  .msg { max-width: 82%; padding: 10px 13px; border-radius: 16px; font-size: 14px; line-height: 1.45; }
+  .agent { background: #232b3d; border-bottom-left-radius: 4px; align-self: flex-start; }
+  .me { background: #2f6bb5; border-bottom-right-radius: 4px; align-self: flex-end; }
+  .quick { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 12px; border-top: 1px solid #1b2230; }
+  .quick button { background: #141b2e; color: #9fc3ee; border: 1px solid #2a3a55; border-radius: 18px;
+                  padding: 8px 12px; font-size: 13px; cursor: pointer; }
+  .typein { display: flex; gap: 8px; padding: 0 12px 12px; }
+  .typein input { flex: 1; background: #141925; border: 1px solid #232b3d; color: #e8ecf3;
+                  border-radius: 10px; padding: 10px; font-size: 14px; outline: none; }
+  .typein button { background: #2f6bb5; color: #fff; border: none; border-radius: 10px; padding: 0 16px; font-weight: 700; cursor: pointer; }
+  .ended { text-align: center; color: #46d68c; font-weight: 700; padding: 12px; }
+  .hint { color: #5b6577; font-size: 12px; text-align: center; padding: 10px; }
+  .backbar { padding: 10px 12px; border-bottom: 1px solid #1b2230; display: flex; gap: 8px; align-items: center; }
+  .backbtn { background: #26304a; color: #aab4c6; border: none; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .backbtn.hot { background: #4a3a12; color: #f5a623; animation: ringpulse 1.2s infinite; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="notch"></div>
+  <div class="screen">
+    <div class="status">● simulator — resident line</div>
+    <div class="backbar" id="backbar" style="display:none">
+      <button class="backbtn" onclick="backToList()">← All calls</button>
+      <span id="ringbadge" style="display:none"><button class="backbtn hot" onclick="backToList()">📞 New incoming call!</button></span>
+    </div>
+    <div class="calls" id="calls"></div>
+    <div id="inputbar" style="display:none">
+      <div class="quick" id="quick"></div>
+      <div class="typein">
+        <input id="txt" placeholder="type as the resident…" autocomplete="off">
+        <button onclick="sendText()">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="hint" style="display:none"></div>
+<script>
+const QUICK = ["I'm out and safe", "I need a ride — I have no car", "I'm on oxygen, I need medical help",
+               "Yes I left, at my son's house", "What? Speak up, I can't hear you"];
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+let activeCall = null, state = null, ringingCount = 0;
+
+function updateBackbar(){
+  const bar = document.getElementById("backbar");
+  const badge = document.getElementById("ringbadge");
+  if (activeCall) {
+    bar.style.display = "flex";
+    badge.style.display = ringingCount > 0 ? "inline-block" : "none";
+  } else {
+    bar.style.display = "none";
+  }
+}
+
+function backToList(){
+  activeCall = null;
+  renderRinging();
+  updateBackbar();
+}
+
+async function api(p, opts){ return (await fetch(p, opts || {})).json(); }
+async function post(p){ return api(p, {method:"POST"}); }
+
+function renderRinging(){
+  const ringing = state.calls.filter(c => c.state === "RINGING" && !c.real);
+  const html = ringing.map(c => {
+    const r = state.residents.find(x => x.id === c.resident_id);
+    return `<div class="ring">
+      <div class="who">📞 NoneLeft</div>
+      <div class="sub">for ${esc(r ? r.name : "resident")} — attempt ${c.attempt} — answer to play this resident</div>
+      <div class="btns">
+        <button class="answer" onclick="answer('${c.id}')">Answer</button>
+        <button class="ignore" onclick="renderChat('${c.id}')">...</button>
+      </div>
+    </div>`;
+  }).join("");
+  const done = state.calls.filter(c => c.state === "DONE");
+  const doneHtml = done.length ? `<h3>Recent calls</h3>` + done.slice(-4).reverse().map(c =>
+    `<div class="ended" style="color:#5b6577;font-weight:400;font-size:13px">call ended — ${c.transcript.length} messages</div>`).join("") : "";
+  document.getElementById("calls").innerHTML =
+    (ringing.length ? `<h3>Incoming calls</h3>${html}` : "") +
+    (done.length ? doneHtml : "") +
+    (!ringing.length && !done.length ? `<div class="hint">No calls yet. Have the operator press TRIGGER on the dispatch board.</div>` : "");
+  document.getElementById("inputbar").style.display = "none";
+}
+
+function renderChat(callId){
+  const c = state.calls.find(x => x.id === callId);
+  if (!c) return;
+  activeCall = callId;
+  const r = state.residents.find(x => x.id === c.resident_id);
+  const chat = c.transcript.map(m =>
+    `<div class="msg ${m.who === "agent" ? "agent" : "me"}">${esc(m.text)}</div>`).join("");
+  const showInput = c.state === "IN_PROGRESS" || c.state === "CLARIFY";
+  document.getElementById("calls").innerHTML =
+    `<h3>Call — ${esc(r ? r.name : "")}</h3><div class="chat">${chat}</div>` +
+    (c.state === "DONE" ? `<div class="ended">✓ call ended — status recorded on dispatch board</div>` : "");
+  document.getElementById("inputbar").style.display = showInput ? "block" : "none";
+  if (showInput) document.getElementById("quick").innerHTML =
+    QUICK.map(q => `<button onclick="quickReply('${q.replace(/'/g,"\\'")}')">${esc(q)}</button>`).join("");
+  const box = document.getElementById("calls"); box.scrollTop = box.scrollHeight;
+}
+
+async function answer(id){ await post(`/api/call/${id}/answer`); renderChat(id); }
+async function quickReply(q){ document.getElementById("txt").value = q; sendText(); }
+async function sendText(){
+  const t = document.getElementById("txt").value.trim();
+  if (!t || !activeCall) return;
+  document.getElementById("txt").value = "";
+  await fetch(`/api/call/${activeCall}/reply`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({text: t})});
+  renderChat(activeCall);
+}
+
+async function tick(){
+  try {
+    state = await api("/api/state");
+    ringingCount = state.calls.filter(c => c.state === "RINGING" && !c.real).length;
+    updateBackbar();
+    if (activeCall) {
+      const c = state.calls.find(x => x.id === activeCall);
+      if (!c) { activeCall = null; renderRinging(); }
+      else renderChat(activeCall);
+    } else renderRinging();
+  } catch(e){}
+}
+setInterval(tick, 1000); tick();
+document.getElementById("txt").addEventListener("keydown", e => { if (e.key === "Enter") sendText(); });
+</script>
+</body>
+</html>
